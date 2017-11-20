@@ -19,11 +19,12 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
     string sourceStorageConnectionString = "<replace with your connection string for source storage account>";
     string destinationStorageConnectionString = "<replace with your connection string for destination storage account>";
 
-    //Get reference to the container
+    //Get references to the containers
     string[] subjectSplit = data[0].subject.ToString().Split('/');
     int containerPosition = Array.IndexOf(subjectSplit, "containers");
     string container = subjectSplit[containerPosition + 1];
     log.Info($"Container is: {container}");
+    string archiveContainer = container + "-archive";
 
     //Get reference to the blob name
     int blobPosition = Array.IndexOf(subjectSplit, "blobs");
@@ -32,16 +33,27 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
 
     // Set up source storage account connection
     CloudStorageAccount sourceAccount = CloudStorageAccount.Parse(sourceStorageConnectionString);
-    CloudBlobClient sourceServiceClient = sourceAccount.CreateCloudBlobClient();
-    var sourceContainer = sourceServiceClient.GetContainerReference(container);
+    CloudBlobClient sourceStorageClient = sourceAccount.CreateCloudBlobClient();
+    var sourceContainer = sourceStorageClient.GetContainerReference(container);
 
     // Set up destination storage account creation
     CloudStorageAccount destinationAccount = CloudStorageAccount.Parse(destinationStorageConnectionString);
-    CloudBlobClient destinationServiceClient = destinationAccount.CreateCloudBlobClient();
-    var destinationContainer = destinationServiceClient.GetContainerReference(container);
+    CloudBlobClient destinationStorageClient = destinationAccount.CreateCloudBlobClient();
+    // Create the replica container if it doesn't exist
+    var destinationContainer = destinationStorageClient.GetContainerReference(container);
     try
     {
         await destinationContainer.CreateIfNotExistsAsync();
+    }
+    catch (Exception e)
+    {
+        log.Error(e.Message);
+    }
+    // Create the replica archive container if it doesn't exist
+    var destinationArchiveContainer = destinationStorageClient.GetContainerReference(archiveContainer);
+    try
+    {
+        await destinationArchiveContainer.CreateIfNotExistsAsync();
     }
     catch (Exception e)
     {
@@ -52,13 +64,23 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
     {
         //A new blob was created, replicate the blob to another storage account
         log.Info($"EventType: {data[0].eventType}");
-        CloudBlockBlob destinationBlob = destinationContainer.GetBlockBlobReference(fileName);
         // Get SAS for the blob so that we can access a private blob
+        CloudBlockBlob sourceBlobVersionCheck = sourceContainer.GetBlockBlobReference(fileName);
+        await sourceBlobVersionCheck.FetchAttributesAsync();
+        //log.Info($"LastModified: {sourceBlobVersionCheck.Properties.LastModified.ToString()}");
+        //log.Info($"Name: {sourceBlobVersionCheck.Name}");
+        DateTime lastModDT = Convert.ToDateTime(sourceBlobVersionCheck.Properties.LastModified.ToString());
+        //log.Info($"lastModDT: {lastModDT.ToString()}");
+        string lastModified = lastModDT.ToString("yyyyMMdd-HHmmsszz");
+        string versionedFileName = fileName + "." + lastModified;
+        CloudBlockBlob destinationBlob = destinationContainer.GetBlockBlobReference(fileName);
+        CloudBlockBlob destinationArchiveBlob = destinationArchiveContainer.GetBlockBlobReference(versionedFileName);
         string sourceBlobUriString = GetBlobSasUri(sourceContainer, fileName, null);
         Uri sourceBlobUri = new Uri(sourceBlobUriString);
         CloudBlockBlob sourceBlob = new CloudBlockBlob(sourceBlobUri);
         if (await sourceBlob.ExistsAsync())
         {
+            // Create the replica
             log.Info($"Copying {sourceBlob.Uri.ToString()} to {destinationBlob.Uri.ToString()}");
             try
             {
@@ -68,10 +90,20 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
             {
                 log.Error(e.Message);
             }
+            // Create the archive replica
+            log.Info($"Copying {sourceBlob.Uri.ToString()} to {destinationArchiveBlob.Uri.ToString()}");
+            try
+            {
+                await destinationArchiveBlob.StartCopyAsync(sourceBlob);
+            }
+            catch (Exception e)
+            {
+                log.Error(e.Message);
+            }
 
             return req.CreateResponse(HttpStatusCode.OK, new
             {
-                body = $"Copied blob {sourceBlob.Uri.ToString()} to {destinationBlob.Uri.ToString()}"
+                body = $"Copied blob {sourceBlob.Uri.ToString()} to {destinationBlob.Uri.ToString()} and created a versioned replica at {destinationArchiveBlob.Uri.ToString()}"
             });
         }
         else
@@ -94,7 +126,6 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
         }
         catch (Exception e)
         {
-
             log.Error(e.Message);
         }
 

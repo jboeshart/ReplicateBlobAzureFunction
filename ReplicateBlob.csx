@@ -16,8 +16,8 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
 
     log.Info($"WebHook was triggered with the following request data: {data}");
 
-    string sourceStorageConnectionString = "DefaultEndpointsProtocol=https;AccountName=eventgridfun1;AccountKey=CUF+vERpTV4bbvuCGdgq8lAHeT49Ba9odpz+KniHS2yGJV9sscMJtIwhRk0CL0iedUUXMo71qPAYrMZW1CBCGQ==;EndpointSuffix=core.windows.net";
-    string destinationStorageConnectionString = "DefaultEndpointsProtocol=https;AccountName=eventgridfun2;AccountKey=6Dzce1JVnX+mzs7x1E1lOUq3ovYV48TdqDUglZCvIbVPt77E25BEYxxtgaEpm4DObTUOx3pY+49ST8kKFKU8ew==;EndpointSuffix=core.windows.net";
+    string sourceStorageConnectionString = "<replace with your connection string for source storage account>";
+    string destinationStorageConnectionString = "<replace with your connection string for destination storage account>";
 
     //Get references to the containers
     string[] subjectSplit = data[0].subject.ToString().Split('/');

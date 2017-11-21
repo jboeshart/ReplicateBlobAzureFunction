@@ -16,8 +16,8 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
 
     log.Info($"WebHook was triggered with the following request data: {data}");
 
-    string sourceStorageConnectionString = "<replace with your connection string for source storage account>";
-    string destinationStorageConnectionString = "<replace with your connection string for destination storage account>";
+    string sourceStorageConnectionString = "DefaultEndpointsProtocol=https;AccountName=eventgridfun1;AccountKey=CUF+vERpTV4bbvuCGdgq8lAHeT49Ba9odpz+KniHS2yGJV9sscMJtIwhRk0CL0iedUUXMo71qPAYrMZW1CBCGQ==;EndpointSuffix=core.windows.net";
+    string destinationStorageConnectionString = "DefaultEndpointsProtocol=https;AccountName=eventgridfun2;AccountKey=6Dzce1JVnX+mzs7x1E1lOUq3ovYV48TdqDUglZCvIbVPt77E25BEYxxtgaEpm4DObTUOx3pY+49ST8kKFKU8ew==;EndpointSuffix=core.windows.net";
 
     //Get references to the containers
     string[] subjectSplit = data[0].subject.ToString().Split('/');
@@ -66,13 +66,12 @@ public static async Task<object> Run(HttpRequestMessage req, TraceWriter log)
         log.Info($"EventType: {data[0].eventType}");
         // Get SAS for the blob so that we can access a private blob
         CloudBlockBlob sourceBlobVersionCheck = sourceContainer.GetBlockBlobReference(fileName);
+        // Get the LastModified property to add to the versioned file name
         await sourceBlobVersionCheck.FetchAttributesAsync();
-        //log.Info($"LastModified: {sourceBlobVersionCheck.Properties.LastModified.ToString()}");
-        //log.Info($"Name: {sourceBlobVersionCheck.Name}");
         DateTime lastModDT = Convert.ToDateTime(sourceBlobVersionCheck.Properties.LastModified.ToString());
-        //log.Info($"lastModDT: {lastModDT.ToString()}");
         string lastModified = lastModDT.ToString("yyyyMMdd-HHmmsszz");
         string versionedFileName = fileName + "." + lastModified;
+        // Get references to the source and replica blobs
         CloudBlockBlob destinationBlob = destinationContainer.GetBlockBlobReference(fileName);
         CloudBlockBlob destinationArchiveBlob = destinationArchiveContainer.GetBlockBlobReference(versionedFileName);
         string sourceBlobUriString = GetBlobSasUri(sourceContainer, fileName, null);
